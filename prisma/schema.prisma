@@ -1,0 +1,165 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TransactionType {
+  PAYMENT_IN
+  EXCHANGE_SGD_TO_USDC
+  EXCHANGE_USDC_TO_USD
+  PAYOUT
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Vendor {
+  id          String      @id @default(uuid())
+  name        String
+  email       String      @unique
+  phone       String?
+  address     String?
+  bankAccount BankAccount?
+  status      VendorStatus @default(ACTIVE)
+  
+  payments    Payment[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("vendors")
+}
+
+model BankAccount {
+  id            String  @id @default(uuid())
+  vendorId      String  @unique
+  vendor        Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  
+  accountNumber String
+  routingNumber String
+  bankName      String
+  accountHolder String
+  country       String  @default("US")
+  currency      String  @default("USD")
+  
+  circleAccountId String? // Circle account ID for payouts
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("bank_accounts")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  idempotencyKey    String        @unique
+  
+  vendorId          String
+  vendor            Vendor        @relation(fields: [vendorId], references: [id])
+  
+  amountSgd         Decimal       @db.Decimal(10, 2)
+  amountUsd         Decimal?      @db.Decimal(10, 2)
+  exchangeRate      Decimal?      @db.Decimal(10, 6)
+  
+  status            PaymentStatus @default(PENDING)
+  
+  customerReference String?
+  description       String?
+  
+  circlePaymentId   String?       // Circle payment ID
+  expectedSettlementTime DateTime? // Expected completion time
+  actualSettlementTime   DateTime? // Actual completion time
+  
+  transactions      Transaction[]
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  paymentId       String
+  payment         Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  
+  type            TransactionType
+  status          TransactionStatus @default(PENDING)
+  
+  amount          Decimal           @db.Decimal(10, 6)
+  currency        String            // SGD, USDC, USD
+  
+  circleTransactionId String?       // Circle transaction/transfer ID
+  blockchainTxHash    String?       // Blockchain transaction hash
+  
+  fromAddress     String?
+  toAddress       String?
+  
+  fees            Decimal?          @db.Decimal(10, 6)
+  feeCurrency     String?
+  
+  metadata        Json?             // Additional Circle metadata
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("transactions")
+}
+
+model WebhookEvent {
+  id              String   @id @default(uuid())
+  circleEventId   String   @unique
+  eventType       String
+  payload         Json
+  processed       Boolean  @default(false)
+  processedAt     DateTime?
+  
+  relatedPaymentId String?
+  relatedTransactionId String?
+  
+  createdAt       DateTime @default(now())
+
+  @@map("webhook_events")
+}
+
+model ExchangeRate {
+  id          String   @id @default(uuid())
+  fromCurrency String
+  toCurrency   String
+  rate        Decimal  @db.Decimal(10, 6)
+  source      String   // "CIRCLE" or other providers
+  
+  validFrom   DateTime
+  validTo     DateTime?
+  
+  createdAt   DateTime @default(now())
+
+  @@map("exchange_rates")
+  @@index([fromCurrency, toCurrency, validFrom])
+}

@@ -5,6 +5,7 @@ import prisma from './config/database';
 import paymentsRouter from './routes/payments';
 import vendorsRouter from './routes/vendors';
 import webhooksRouter from './routes/webhooks';
+import circleRouter from './routes/circle';
 
 // Load environment variables
 dotenv.config();
@@ -48,6 +49,7 @@ app.get('/health', async (req, res) => {
 app.use('/api/payments', paymentsRouter);
 app.use('/api/vendors', vendorsRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/circle', circleRouter);
 
 // Root endpoint with API documentation
 app.get('/', (req, res) => {
@@ -70,6 +72,15 @@ app.get('/', (req, res) => {
       },
       webhooks: {
         circle: 'POST /api/webhooks/circle'
+      },
+      circle: {
+        listWallets: 'GET /api/circle/wallets',
+        createWallet: 'POST /api/circle/wallets',
+        getWallet: 'GET /api/circle/wallets/:walletId',
+        getExchangeRates: 'GET /api/circle/exchange-rates',
+        createBankAccount: 'POST /api/circle/bank-accounts',
+        testPaymentIntent: 'POST /api/circle/test-payment-intent',
+        getPaymentIntent: 'GET /api/circle/payment-intent/:paymentIntentId'
       }
     },
     documentation: {

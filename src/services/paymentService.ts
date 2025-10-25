@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { circle } from '../config/circle';
+import { CircleService } from './circleService';
 import { generateIdempotencyKey } from '../utils/idempotency';
 import { 
   CreatePaymentRequest, 
@@ -10,6 +10,11 @@ import {
 } from '../types';
 
 export class PaymentService {
+  private circleService: CircleService;
+
+  constructor() {
+    this.circleService = new CircleService();
+  }
   async initiatePayment(request: CreatePaymentRequest, providedIdempotencyKey?: string): Promise<CreatePaymentResponse> {
     const idempotencyKey = providedIdempotencyKey || generateIdempotencyKey();
     
@@ -140,22 +145,20 @@ export class PaymentService {
         idempotencyKey: `${payment.idempotencyKey}-payment-intent`
       };
 
-      // For MVP, simulate Circle payment intent creation
-      const response = {
-        data: {
-          data: {
-            id: `pi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            amount: paymentIntentRequest.amount,
-            currency: paymentIntentRequest.settlementCurrency,
-            status: 'pending'
-          }
-        }
-      };
+      // Convert SGD to USD for Circle (since Circle doesn't support SGD directly)
+      const sgdToUsdRate = 0.74; // Mock rate - in production, get from forex API
+      const amountUsd = payment.amountSgd.toNumber() * sgdToUsdRate;
+      
+      // Create real Circle crypto payment intent
+      const response = await this.circleService.createCryptoPaymentIntent(
+        amountUsd,
+        payment.idempotencyKey
+      );
       
       // Store Circle payment ID
       await prisma.payment.update({
         where: { id: paymentId },
-        data: { circlePaymentId: response.data?.data?.id }
+        data: { circlePaymentId: response.data?.id }
       });
 
       // Create transaction record
@@ -166,12 +169,12 @@ export class PaymentService {
           status: TransactionStatus.PENDING,
           amount: payment.amountSgd,
           currency: 'SGD',
-          circleTransactionId: response.data?.data?.id,
-          metadata: response.data?.data
+          circleTransactionId: response.data?.id,
+          metadata: response.data
         }
       });
 
-      return response.data?.data;
+      return response.data;
 
     } catch (error) {
       console.error('Circle payment intent creation error:', error);
